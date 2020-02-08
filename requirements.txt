@@ -1,4 +1,5 @@
-unidecode
 matplotlib
 nltk
+requests
+unidecode
 vaderSentiment
