@@ -4,14 +4,15 @@ from operator import itemgetter
 from nltk.corpus import stopwords
 from unidecode import unidecode
 
+from datetime import datetime
+from heapq import nlargest
+from string import punctuation
+from time import clock
+from json import load
+from copy import deepcopy
+
 import numpy as np
 import matplotlib.pyplot as plt
-import datetime
-import heapq
-import string
-import time
-import json
-import copy
 
 english_stopwords = set(stopwords.words('english'))
 sentiment_analyzer = SentimentIntensityAnalyzer()
@@ -22,7 +23,7 @@ def _load_messages(filename):
         return cache[filename]
     else:
         with open(filename) as jsonfile:
-            data = json.load(jsonfile)
+            data = load(jsonfile)
             cache[filename] = data
             return data
 
@@ -32,7 +33,7 @@ def get_messages(filename, copy_from_cache=True):
     # Copy the stored messages we have
     copied_messages = data['messages']
     if copy_from_cache:
-        copied_messages = copy.deepcopy(data['messages'])
+        copied_messages = deepcopy(data['messages'])
 
     # Return a sorted list of messages by time
     return sorted(copied_messages, key=lambda message : message['timestamp_ms'])
@@ -44,12 +45,12 @@ def analyze(filename):
 
     # Load messages
     print('Reading file {0} ...'.format(filename))
-    timestamp = time.clock()
+    timestamp = clock()
     messages = get_messages(filename, copy_from_cache=False)
-    print('Loaded {0} messages in {1:.2f} seconds.'.format(len(messages), time.clock() - timestamp))
+    print('Loaded {0} messages in {1:.2f} seconds.'.format(len(messages), clock() - timestamp))
 
     print('Aggregating data ...')
-    timestamp = time.clock()
+    timestamp = clock()
 
     # Data structures to hold information about the messages
     daily_counts = defaultdict(int)
@@ -62,12 +63,13 @@ def analyze(filename):
     word_frequencies = defaultdict(int)
     first_date = None
     last_date = None
+    content = None
 
     # Extract information from the messages
     for message in messages:
         # Convert message's Unix timestamp to local datetime
         ts = message['timestamp_ms'] / 1000
-        date = datetime.datetime.fromtimestamp(ts)
+        date = datetime.fromtimestamp(ts)
         month = date.strftime('%Y-%m')
         day = date.strftime('%Y-%m-%d')
         day_name = date.strftime('%A')
@@ -96,7 +98,7 @@ def analyze(filename):
             # Split message up by spaces to get individual words
             for word in content.split(' '):
                 # Make the word lowercase and strip it of punctuation
-                new_word = word.lower().strip(string.punctuation)
+                new_word = word.lower().strip(punctuation)
 
                 # Word might have been entirely punctuation; don't strip it
                 if not new_word:
@@ -120,9 +122,9 @@ def analyze(filename):
     num_days = (last_date - first_date).days
 
     # Get most common words
-    top_words = heapq.nlargest(42, word_frequencies.items(), key=itemgetter(1))
+    top_words = nlargest(42, word_frequencies.items(), key=itemgetter(1))
 
-    print('Processed data in {0:.2f} seconds.'.format(time.clock() - timestamp))
+    print('Processed data in {0:.2f} seconds.'.format(clock() - timestamp))
 
     print('Preparing data for display ...')
 
