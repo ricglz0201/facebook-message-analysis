@@ -25,7 +25,7 @@ def _load_messages(filename):
             data = json.load(jsonfile)
             cache[filename] = data
             return data
-        
+
 def get_messages(filename, copy_from_cache=True):
     data = _load_messages(filename)
 
@@ -35,7 +35,7 @@ def get_messages(filename, copy_from_cache=True):
         copied_messages = copy.deepcopy(data['messages'])
 
     # Return a sorted list of messages by time
-    return sorted(copied_messages, key=lambda message : message['timestamp'])
+    return sorted(copied_messages, key=lambda message : message['timestamp_ms'])
 
 def analyze(filename):
     '''
@@ -51,7 +51,7 @@ def analyze(filename):
     print('Aggregating data ...')
     timestamp = time.clock()
 
-    # Data structures to hold information about the messages 
+    # Data structures to hold information about the messages
     daily_counts = defaultdict(int)
     daily_sticker_counts = defaultdict(int)
     daily_sentiments = defaultdict(float)
@@ -60,37 +60,39 @@ def analyze(filename):
     hourly_counts = defaultdict(int)
     day_name_counts = defaultdict(int)
     word_frequencies = defaultdict(int)
-    first_date = None 
-    last_date = None 
+    first_date = None
+    last_date = None
 
-    # Extract information from the messages 
+    # Extract information from the messages
     for message in messages:
         # Convert message's Unix timestamp to local datetime
-        date = datetime.datetime.fromtimestamp(message['timestamp'])
+        ts = message['timestamp_ms'] / 1000
+        date = datetime.datetime.fromtimestamp(ts)
         month = date.strftime('%Y-%m')
         day = date.strftime('%Y-%m-%d')
         day_name = date.strftime('%A')
         hour = date.time().hour
 
+        # Increment message counts
+        hourly_counts[hour] += 1
+        day_name_counts[day_name] += 1
+        daily_counts[day] += 1
+        monthly_counts[month] += 1
+
         # Get content in message if it has any
         if 'content' in message:
             content = unidecode(message['content'])
 
-        # Increment message counts
-        hourly_counts[hour] += 1 
-        day_name_counts[day_name] += 1 
-        daily_counts[day] += 1
-        monthly_counts[month] += 1
-        if 'sticker' in message:
+            # Rudimentary sentiment analysis using VADER
+            sentiments = sentiment_analyzer.polarity_scores(content)
+            daily_sentiments[day] += sentiments['pos'] - sentiments['neg']
+        # Increase sticker count if any stickers were added
+        elif 'sticker' in message:
             daily_sticker_counts[day] += 1
             monthly_sticker_counts[month] += 1
 
-        # Rudimentary sentiment analysis using VADER
-        sentiments = sentiment_analyzer.polarity_scores(content)
-        daily_sentiments[day] += sentiments['pos'] - sentiments['neg']
-
         # Determine word frequencies
-        if content: 
+        if content:
             # Split message up by spaces to get individual words
             for word in content.split(' '):
                 # Make the word lowercase and strip it of punctuation
@@ -99,16 +101,16 @@ def analyze(filename):
                 # Word might have been entirely punctuation; don't strip it
                 if not new_word:
                     new_word = word.lower()
-                
+
                 # Ignore word if it in the stopword set or if it is less than 2 characters
                 if len(new_word) > 1 and new_word not in english_stopwords:
-                    word_frequencies[new_word] += 1 
+                    word_frequencies[new_word] += 1
 
-        # Determine start and last dates of messages 
+        # Determine start and last dates of messages
         if (first_date and first_date > date) or not first_date:
-            first_date = date 
+            first_date = date
         if (last_date and last_date < date) or not last_date:
-            last_date = date 
+            last_date = date
 
     # Take the average of the sentiment amassed for each day
     for day, message_count in daily_counts.items():
@@ -118,7 +120,7 @@ def analyze(filename):
     num_days = (last_date - first_date).days
 
     # Get most common words
-    top_words = heapq.nlargest(42, word_frequencies.items(), key=itemgetter(1)) 
+    top_words = heapq.nlargest(42, word_frequencies.items(), key=itemgetter(1))
 
     print('Processed data in {0:.2f} seconds.'.format(time.clock() - timestamp))
 
@@ -137,10 +139,10 @@ def analyze(filename):
     ydata_hourly = [float(hourly_counts[x]) / num_days for x in range(24)]
     xdata_sentiment = sorted(list(daily_sentiments.keys()))
     ydata_sentiment = [daily_sentiments[x] for x in xdata_sentiment]
-    xdata_top_words, ydata_top_words = zip(*top_words) 
+    xdata_top_words, ydata_top_words = zip(*top_words)
 
     '''
-    DATA VISUALIZATION 
+    DATA VISUALIZATION
     '''
 
     print('Displaying ...')
@@ -151,12 +153,12 @@ def analyze(filename):
     def show_daily_total_graph(ax, xdata, ydata, ydata_stickers):
         indices = np.arange(len(xdata))
 
-        ax.plot(indices, ydata, 
-                alpha=1.0, color='dodgerblue', 
+        ax.plot(indices, ydata,
+                alpha=1.0, color='dodgerblue',
                 label='All messages')
 
-        ax.plot(indices, ydata_stickers, 
-                alpha=1.0, color='orange', 
+        ax.plot(indices, ydata_stickers,
+                alpha=1.0, color='orange',
                 label='Facebook stickers')
 
         ax.set_xlabel('Date')
@@ -178,12 +180,12 @@ def analyze(filename):
     def show_monthly_total_graph(ax, xdata, ydata, ydata_stickers):
         indices = np.arange(len(xdata))
 
-        ax.bar(indices, ydata, 
-                alpha=1.0, color='dodgerblue', 
+        ax.bar(indices, ydata,
+                alpha=1.0, color='dodgerblue',
                 label='All messages')
 
-        ax.bar(indices, ydata_stickers, 
-                alpha=1.0, color='orange', 
+        ax.bar(indices, ydata_stickers,
+                alpha=1.0, color='orange',
                 label='Facebook stickers')
 
         ax.set_xlabel('Date')
@@ -196,12 +198,12 @@ def analyze(filename):
             tick.set_rotation(30)
 
         ax.legend()
-   
+
     def show_day_name_average_graph(ax, xdata, ydata):
         indices = np.arange(len(xdata))
         bar_width = 0.6
-        
-        ax.bar(indices, ydata, bar_width, 
+
+        ax.bar(indices, ydata, bar_width,
                 alpha=1.0, color='dodgerblue',
                 align='center',
                 label='All messages')
@@ -216,8 +218,8 @@ def analyze(filename):
     def show_hourly_average_graph(ax, xdata, ydata):
         indices = np.arange(len(xdata))
         bar_width = 0.8
-        
-        ax.bar(indices, ydata, bar_width, 
+
+        ax.bar(indices, ydata, bar_width,
                 alpha=1.0, color='dodgerblue',
                 align='center',
                 label='All messages')
@@ -234,8 +236,8 @@ def analyze(filename):
     def show_daily_sentiment_graph(ax, xdata, ydata):
         indices = np.arange(len(xdata))
 
-        ax.plot(indices, ydata, 
-                alpha=1.0, color='darkseagreen', 
+        ax.plot(indices, ydata,
+                alpha=1.0, color='darkseagreen',
                 label='VADER sentiment')
 
         ax.set_xlabel('Date')
@@ -258,8 +260,8 @@ def analyze(filename):
     def show_top_words_graph(ax, xdata, ydata):
         indices = np.arange(len(xdata))
         bar_width = 0.8
-        
-        ax.barh(indices, ydata, bar_width, 
+
+        ax.barh(indices, ydata, bar_width,
                 alpha=1.0, color='orchid',
                 align='center',
                 label='All messages')
@@ -283,5 +285,3 @@ def analyze(filename):
     plt.show()
 
     print('Done.')
-
-
